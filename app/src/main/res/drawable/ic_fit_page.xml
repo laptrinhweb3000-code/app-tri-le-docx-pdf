@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Portrait page rectangle -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M6,3 L18,3 L18,21 L6,21 Z"
+        android:strokeColor="#FF1E3A8A"
+        android:strokeLineJoin="round"
+        android:strokeWidth="2" />
+    <!-- Content lines inside portrait page -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M9,8 L15,8 M9,12 L15,12 M9,16 L13,16"
+        android:strokeColor="#FF1E3A8A"
+        android:strokeLineCap="round"
+        android:strokeWidth="1.8" />
+</vector>

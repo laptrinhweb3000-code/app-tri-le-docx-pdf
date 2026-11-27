@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="#1E293B"
+    android:orientation="vertical"
+    android:paddingTop="6dp"
+    android:paddingBottom="6dp">
+
+    <ImageView
+        android:id="@+id/ivVerticalPage"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:adjustViewBounds="true"
+        android:background="#FFFFFF"
+        android:contentDescription="Trang PDF"
+        android:scaleType="fitCenter" />
+
+    <TextView
+        android:id="@+id/tvVerticalPageNum"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:paddingTop="4dp"
+        android:paddingBottom="2dp"
+        android:textColor="#94A3B8"
+        android:textSize="11sp" />
+</LinearLayout>

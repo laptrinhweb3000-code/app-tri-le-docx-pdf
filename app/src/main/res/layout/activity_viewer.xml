@@ -5,7 +5,7 @@
     android:background="@color/stage_dark"
     android:keepScreenOn="true">
 
-    <!-- Full-screen Document / Slide Stage -->
+    <!-- Full-screen Document Stage -->
     <FrameLayout
         android:id="@+id/stageContainer"
         android:layout_width="match_parent"
@@ -23,7 +23,7 @@
             android:id="@+id/rvPdfVertical"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:background="#1E293B"
+            android:background="#FFFFFF"
             android:visibility="gone" />
 
         <WebView
@@ -68,7 +68,7 @@
             android:visibility="visible" />
     </FrameLayout>
 
-    <!-- Independent Floating 3-Dot Menu Button (Top-Right, 80% transparent button, 100% opaque dark text) -->
+    <!-- Independent Floating 3-Dot Menu Button (Top-Right, 80% transparent, 100% opaque dark text) -->
     <TextView
         android:id="@+id/btnFloatingMenu"
         android:layout_width="34dp"
@@ -84,14 +84,14 @@
         android:textSize="18sp"
         android:textStyle="bold" />
 
-    <!-- Floating Controls Overlay (Hidden by default in Reading mode; no solid bars) -->
+    <!-- Floating Controls Overlay -->
     <FrameLayout
         android:id="@+id/floatingControlsGroup"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:visibility="gone">
 
-        <!-- Top-Left Floating Mini Buttons (independent pills, gaps show underlying text) -->
+        <!-- Top-Left Floating Mini Buttons -->
         <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
@@ -176,7 +176,7 @@
             android:textSize="10sp"
             android:textStyle="bold" />
 
-        <!-- Bottom Floating Presenter Tool Pills (independent buttons, no bar background) -->
+        <!-- Bottom Floating Tool Pills (includes icon Fit-Width, icon Fit-Page, Không phân trang, Phân trang) -->
         <HorizontalScrollView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -206,8 +206,30 @@
                     android:textSize="11sp"
                     android:textStyle="bold" />
 
+                <!-- Icon-only: Landscape page (Vừa chiều ngang cửa sổ) -->
+                <ImageView
+                    android:id="@+id/btnFitWidth"
+                    android:layout_width="34dp"
+                    android:layout_height="30dp"
+                    android:layout_marginEnd="6dp"
+                    android:background="@drawable/bg_floating_btn_active"
+                    android:contentDescription="Vừa chiều ngang cửa sổ"
+                    android:padding="4dp"
+                    android:src="@drawable/ic_fit_width" />
+
+                <!-- Icon-only: Portrait page (Vừa toàn trang) -->
+                <ImageView
+                    android:id="@+id/btnFitPage"
+                    android:layout_width="34dp"
+                    android:layout_height="30dp"
+                    android:layout_marginEnd="6dp"
+                    android:background="@drawable/bg_floating_btn"
+                    android:contentDescription="Nhìn thấy toàn trang"
+                    android:padding="4dp"
+                    android:src="@drawable/ic_fit_page" />
+
                 <TextView
-                    android:id="@+id/btnVerticalScroll"
+                    android:id="@+id/btnNoPaginate"
                     android:layout_width="wrap_content"
                     android:layout_height="30dp"
                     android:layout_marginEnd="6dp"
@@ -215,8 +237,22 @@
                     android:gravity="center"
                     android:paddingStart="10dp"
                     android:paddingEnd="10dp"
-                    android:text="Cuộn dọc"
+                    android:text="Không phân trang"
                     android:textColor="#FF065F46"
+                    android:textSize="11sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/btnPaginate"
+                    android:layout_width="wrap_content"
+                    android:layout_height="30dp"
+                    android:layout_marginEnd="6dp"
+                    android:background="@drawable/bg_floating_btn"
+                    android:gravity="center"
+                    android:paddingStart="10dp"
+                    android:paddingEnd="10dp"
+                    android:text="Phân trang"
+                    android:textColor="#FF6D28D9"
                     android:textSize="11sp"
                     android:textStyle="bold" />
 
@@ -319,7 +355,7 @@
             </LinearLayout>
         </HorizontalScrollView>
 
-        <!-- Bottom Floating Page Navigation Pills (no solid bar) -->
+        <!-- Bottom Floating Page Navigation Pills -->
         <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"

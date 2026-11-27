@@ -1,5 +1,6 @@
 package com.doccast.presenter.ui
 
+import android.annotation.SuppressLint
 import android.content.ClipData
 import android.content.ContentValues
 import android.content.Intent
@@ -59,6 +60,7 @@ class ViewerActivity : AppCompatActivity() {
     private lateinit var annotationStore: AnnotationStore
     private lateinit var swipeDetector: GestureDetector
     private lateinit var pdfLayoutManager: LinearLayoutManager
+    private var pdfVerticalAdapter: PdfVerticalAdapter? = null
 
     private var currentUri: Uri? = null
     private var currentUriString: String = ""
@@ -68,9 +70,12 @@ class ViewerActivity : AppCompatActivity() {
     private var loadedDoc: LoadedDocument? = null
     private var currentPageIndex: Int = 0
     private var totalPages: Int = 1
-    private var isBlackout: Boolean = false
+
+    // v1.1 defaults: Fit Width + Continuous Vertical Scroll + Non-Paginated
+    private var fitMode: String = "width" // "width" or "page"
+    private var isPaginated: Boolean = false
     private var isPcMode: Boolean = false
-    private var isVerticalScroll: Boolean = true
+    private var isBlackout: Boolean = false
     private var controlsVisible: Boolean = false
 
     private var externalPresentation: ExternalScreenPresentation? = null
@@ -138,7 +143,8 @@ class ViewerActivity : AppCompatActivity() {
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
         val isNormalMode = binding.annotationOverlay.mode == AnnotationOverlayView.Mode.NONE
         val isSingleFinger = ev.pointerCount == 1
-        val pdfZoomed = loadedDoc is LoadedDocument.Pdf && (if (isVerticalScroll) binding.rvPdfVertical.isZoomed() else binding.ivPdfPage.isZoomed())
+        val pdfZoomed = loadedDoc is LoadedDocument.Pdf &&
+            (if (fitMode == "width") binding.rvPdfVertical.isZoomed() else binding.ivPdfPage.isZoomed())
         if (isNormalMode && isSingleFinger && !pdfZoomed) {
             swipeDetector.onTouchEvent(ev)
         }
@@ -178,11 +184,7 @@ class ViewerActivity : AppCompatActivity() {
                 val dx = e2.x - e1.x
                 val dy = e2.y - e1.y
                 if (abs(dx) > 120 && abs(dx) > abs(dy) * 1.5f && abs(velocityX) > 200) {
-                    if (dx < 0) {
-                        goToNextPage()
-                    } else {
-                        goToPrevPage()
-                    }
+                    if (dx < 0) goToNextPage() else goToPrevPage()
                     return true
                 }
                 return false
@@ -190,9 +192,11 @@ class ViewerActivity : AppCompatActivity() {
         })
     }
 
+    @SuppressLint("SetJavaScriptEnabled")
     private fun setupWebView() {
+        binding.webOfficeView.setLayerType(View.LAYER_TYPE_HARDWARE, null)
         binding.webOfficeView.settings.apply {
-            javaScriptEnabled = false
+            javaScriptEnabled = true
             setSupportZoom(true)
             builtInZoomControls = true
             displayZoomControls = false
@@ -205,9 +209,10 @@ class ViewerActivity : AppCompatActivity() {
     private fun setupVerticalPdfList() {
         pdfLayoutManager = LinearLayoutManager(this, LinearLayoutManager.VERTICAL, false)
         binding.rvPdfVertical.layoutManager = pdfLayoutManager
+        binding.rvPdfVertical.setItemViewCacheSize(4)
         binding.rvPdfVertical.addOnScrollListener(object : RecyclerView.OnScrollListener() {
             override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
-                if (!isVerticalScroll || loadedDoc !is LoadedDocument.Pdf) return
+                if (fitMode != "width" || loadedDoc !is LoadedDocument.Pdf) return
                 val firstVisible = pdfLayoutManager.findFirstVisibleItemPosition()
                 if (firstVisible != RecyclerView.NO_POSITION && firstVisible != currentPageIndex) {
                     currentPageIndex = firstVisible
@@ -245,33 +250,46 @@ class ViewerActivity : AppCompatActivity() {
         binding.btnModeLaser.setOnClickListener { setToolMode(AnnotationOverlayView.Mode.LASER) }
         binding.btnModePen.setOnClickListener { setToolMode(AnnotationOverlayView.Mode.PEN) }
 
-        binding.btnVerticalScroll.setOnClickListener {
-            isVerticalScroll = !isVerticalScroll
-            binding.btnVerticalScroll.setBackgroundResource(
-                if (isVerticalScroll) R.drawable.bg_floating_btn_active else R.drawable.bg_floating_btn
-            )
+        binding.btnFitWidth.setOnClickListener {
+            fitMode = "width"
+            binding.rvPdfVertical.resetZoom()
+            binding.ivPdfPage.resetZoom()
+            refreshViewModeButtons()
             showPage(currentPageIndex)
-            Toast.makeText(
-                this,
-                if (isVerticalScroll) "Đã bật cuộn trang theo chiều dọc" else "Đã chuyển sang chế độ xem từng trang",
-                Toast.LENGTH_SHORT
-            ).show()
+        }
+
+        binding.btnFitPage.setOnClickListener {
+            fitMode = "page"
+            binding.rvPdfVertical.resetZoom()
+            binding.ivPdfPage.resetZoom()
+            refreshViewModeButtons()
+            showPage(currentPageIndex)
+        }
+
+        binding.btnNoPaginate.setOnClickListener {
+            if (isPaginated) {
+                isPaginated = false
+                pdfVerticalAdapter?.isPaginated = false
+                pdfVerticalAdapter?.notifyDataSetChanged()
+                refreshViewModeButtons()
+                showPage(currentPageIndex)
+            }
+        }
+
+        binding.btnPaginate.setOnClickListener {
+            if (!isPaginated) {
+                isPaginated = true
+                pdfVerticalAdapter?.isPaginated = true
+                pdfVerticalAdapter?.notifyDataSetChanged()
+                refreshViewModeButtons()
+                showPage(currentPageIndex)
+            }
         }
 
         binding.btnPcMode.setOnClickListener {
             isPcMode = !isPcMode
-            binding.btnPcMode.setBackgroundResource(
-                if (isPcMode) R.drawable.bg_floating_btn_active else R.drawable.bg_floating_btn
-            )
-            if (loadedDoc is LoadedDocument.Pdf) {
-                if (isVerticalScroll) binding.rvPdfVertical.resetZoom() else binding.ivPdfPage.resetZoom()
-            }
+            refreshViewModeButtons()
             showPage(currentPageIndex)
-            Toast.makeText(
-                this,
-                if (isPcMode) "Đã bật chế độ trang chuẩn PC (hỗ trợ thu phóng)" else "Đã chuyển về chế độ đọc di động",
-                Toast.LENGTH_SHORT
-            ).show()
         }
 
         binding.btnClearInk.setOnClickListener {
@@ -279,13 +297,8 @@ class ViewerActivity : AppCompatActivity() {
             saveCurrentPageStrokes()
         }
 
-        binding.btnSaveInk.setOnClickListener {
-            saveAnnotationsAndExportFile()
-        }
-
-        binding.btnShareFile.setOnClickListener {
-            shareCurrentFile()
-        }
+        binding.btnSaveInk.setOnClickListener { saveAnnotationsAndExportFile() }
+        binding.btnShareFile.setOnClickListener { shareCurrentFile() }
 
         binding.btnBlackout.setOnClickListener {
             isBlackout = !isBlackout
@@ -320,11 +333,28 @@ class ViewerActivity : AppCompatActivity() {
             }
         }
 
-        binding.btnWifiCast.setOnClickListener {
-            showWifiCastDialog()
-        }
+        binding.btnWifiCast.setOnClickListener { showWifiCastDialog() }
 
         setToolMode(AnnotationOverlayView.Mode.NONE)
+        refreshViewModeButtons()
+    }
+
+    private fun refreshViewModeButtons() {
+        binding.btnFitWidth.setBackgroundResource(
+            if (fitMode == "width") R.drawable.bg_floating_btn_active else R.drawable.bg_floating_btn
+        )
+        binding.btnFitPage.setBackgroundResource(
+            if (fitMode == "page") R.drawable.bg_floating_btn_active else R.drawable.bg_floating_btn
+        )
+        binding.btnNoPaginate.setBackgroundResource(
+            if (!isPaginated) R.drawable.bg_floating_btn_active else R.drawable.bg_floating_btn
+        )
+        binding.btnPaginate.setBackgroundResource(
+            if (isPaginated) R.drawable.bg_floating_btn_active else R.drawable.bg_floating_btn
+        )
+        binding.btnPcMode.setBackgroundResource(
+            if (isPcMode) R.drawable.bg_floating_btn_active else R.drawable.bg_floating_btn
+        )
     }
 
     private fun shareCurrentFile() {
@@ -338,9 +368,7 @@ class ViewerActivity : AppCompatActivity() {
                     val outFile = File(shareDir, safeName)
 
                     contentResolver.openInputStream(sourceUri)?.use { input ->
-                        FileOutputStream(outFile).use { output ->
-                            input.copyTo(output)
-                        }
+                        FileOutputStream(outFile).use { output -> input.copyTo(output) }
                     } ?: throw IllegalStateException("Không thể đọc tệp hiện tại để chia sẻ.")
 
                     val providerUri = FileProvider.getUriForFile(
@@ -359,19 +387,9 @@ class ViewerActivity : AppCompatActivity() {
                     clipData = ClipData.newRawUri(currentDocTitle, shareUri)
                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 }
-
-                startActivity(
-                    Intent.createChooser(
-                        sendIntent,
-                        "Chia sẻ qua Zalo, Messenger, Drive, OneDrive…"
-                    )
-                )
+                startActivity(Intent.createChooser(sendIntent, "Chia sẻ qua Zalo, Messenger, Drive, OneDrive…"))
             } catch (e: Exception) {
-                Toast.makeText(
-                    this@ViewerActivity,
-                    "Không thể chia sẻ tệp: ${e.message}",
-                    Toast.LENGTH_LONG
-                ).show()
+                Toast.makeText(this@ViewerActivity, "Không thể chia sẻ tệp: ${e.message}", Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -397,7 +415,7 @@ class ViewerActivity : AppCompatActivity() {
     private fun goToPrevPage() {
         if (currentPageIndex > 0) {
             saveCurrentPageStrokes()
-            if (isVerticalScroll && loadedDoc is LoadedDocument.Pdf) {
+            if (fitMode == "width" && loadedDoc is LoadedDocument.Pdf) {
                 currentPageIndex--
                 binding.rvPdfVertical.smoothScrollToPosition(currentPageIndex)
                 binding.tvPageCounter.text = "${currentPageIndex + 1} / $totalPages"
@@ -411,7 +429,7 @@ class ViewerActivity : AppCompatActivity() {
     private fun goToNextPage() {
         if (currentPageIndex < totalPages - 1) {
             saveCurrentPageStrokes()
-            if (isVerticalScroll && loadedDoc is LoadedDocument.Pdf) {
+            if (fitMode == "width" && loadedDoc is LoadedDocument.Pdf) {
                 currentPageIndex++
                 binding.rvPdfVertical.smoothScrollToPosition(currentPageIndex)
                 binding.tvPageCounter.text = "${currentPageIndex + 1} / $totalPages"
@@ -433,9 +451,8 @@ class ViewerActivity : AppCompatActivity() {
 
     private fun saveAnnotationsAndExportFile() {
         saveCurrentPageStrokes()
-        val baseName = currentDocTitle.substringBeforeLast('.').ifBlank { "DocCast" }
+        val baseName = currentDocTitle.substringBeforeLast('.').ifBlank { "TriLe" }
         val isPdf = loadedDoc is LoadedDocument.Pdf
-
         if (isPdf) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 exportAnnotatedPdfToDownloads("${baseName}_ghichu.pdf")
@@ -454,20 +471,14 @@ class ViewerActivity : AppCompatActivity() {
                     val values = ContentValues().apply {
                         put(MediaStore.Downloads.DISPLAY_NAME, fileName)
                         put(MediaStore.Downloads.MIME_TYPE, "application/pdf")
-                        put(MediaStore.Downloads.RELATIVE_PATH, "${Environment.DIRECTORY_DOWNLOADS}/DocCastPresenter")
+                        put(MediaStore.Downloads.RELATIVE_PATH, "${Environment.DIRECTORY_DOWNLOADS}/Tri.Le.docx.pdf")
                     }
                     val uri = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
                         ?: throw IllegalStateException("Không thể tạo tệp trong Download.")
-                    contentResolver.openOutputStream(uri)?.use { out ->
-                        writeAnnotatedPdf(out)
-                    }
-                    "Download/DocCastPresenter/$fileName"
+                    contentResolver.openOutputStream(uri)?.use { out -> writeAnnotatedPdf(out) }
+                    "Download/Tri.Le.docx.pdf/$fileName"
                 }
-                Toast.makeText(
-                    this@ViewerActivity,
-                    "Đã lưu nét vẽ vào $savedPath",
-                    Toast.LENGTH_LONG
-                ).show()
+                Toast.makeText(this@ViewerActivity, "Đã lưu nét vẽ vào $savedPath", Toast.LENGTH_LONG).show()
             } catch (e: Exception) {
                 Toast.makeText(this@ViewerActivity, "Lỗi lưu tệp: ${e.message}", Toast.LENGTH_LONG).show()
             }
@@ -478,9 +489,7 @@ class ViewerActivity : AppCompatActivity() {
         lifecycleScope.launch {
             try {
                 withContext(Dispatchers.IO) {
-                    contentResolver.openOutputStream(destUri)?.use { out ->
-                        writeAnnotatedPdf(out)
-                    }
+                    contentResolver.openOutputStream(destUri)?.use { out -> writeAnnotatedPdf(out) }
                 }
                 Toast.makeText(this@ViewerActivity, "Đã lưu file PDF kèm nét vẽ!", Toast.LENGTH_LONG).show()
             } catch (e: Exception) {
@@ -505,12 +514,7 @@ class ViewerActivity : AppCompatActivity() {
                 } else {
                     annotationStore.loadPageStrokes(currentUriString, i)
                 }
-                AnnotationOverlayView.drawStrokesOnCanvas(
-                    canvas,
-                    bmp.width.toFloat(),
-                    bmp.height.toFloat(),
-                    strokes
-                )
+                AnnotationOverlayView.drawStrokesOnCanvas(canvas, bmp.width.toFloat(), bmp.height.toFloat(), strokes)
                 pdfDoc.finishPage(page)
             }
             pdfDoc.writeTo(out)
@@ -522,10 +526,8 @@ class ViewerActivity : AppCompatActivity() {
     private fun exportStageSnapshotPng(fileName: String) {
         val stage = binding.stageContainer
         if (stage.width <= 0 || stage.height <= 0) return
-
         val bmp = Bitmap.createBitmap(stage.width, stage.height, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(bmp)
-        stage.draw(canvas)
+        stage.draw(Canvas(bmp))
 
         lifecycleScope.launch {
             try {
@@ -534,19 +536,15 @@ class ViewerActivity : AppCompatActivity() {
                         val values = ContentValues().apply {
                             put(MediaStore.Downloads.DISPLAY_NAME, fileName)
                             put(MediaStore.Downloads.MIME_TYPE, "image/png")
-                            put(MediaStore.Downloads.RELATIVE_PATH, "${Environment.DIRECTORY_DOWNLOADS}/DocCastPresenter")
+                            put(MediaStore.Downloads.RELATIVE_PATH, "${Environment.DIRECTORY_DOWNLOADS}/Tri.Le.docx.pdf")
                         }
                         val uri = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
                             ?: throw IllegalStateException("Không thể tạo ảnh trong Download.")
-                        contentResolver.openOutputStream(uri)?.use { out ->
-                            bmp.compress(Bitmap.CompressFormat.PNG, 100, out)
-                        }
-                        "Download/DocCastPresenter/$fileName"
+                        contentResolver.openOutputStream(uri)?.use { out -> bmp.compress(Bitmap.CompressFormat.PNG, 100, out) }
+                        "Download/Tri.Le.docx.pdf/$fileName"
                     } else {
                         val file = File(getExternalFilesDir(Environment.DIRECTORY_PICTURES), fileName)
-                        file.outputStream().use { out ->
-                            bmp.compress(Bitmap.CompressFormat.PNG, 100, out)
-                        }
+                        file.outputStream().use { out -> bmp.compress(Bitmap.CompressFormat.PNG, 100, out) }
                         file.absolutePath
                     }
                 }
@@ -594,18 +592,15 @@ class ViewerActivity : AppCompatActivity() {
 
                 if (result is LoadedDocument.Pdf && pdfEngine != null) {
                     val targetWidth = resources.displayMetrics.widthPixels.coerceAtLeast(1080)
-                    binding.rvPdfVertical.adapter = PdfVerticalAdapter(pdfEngine!!, targetWidth, lifecycleScope)
+                    pdfVerticalAdapter = PdfVerticalAdapter(pdfEngine!!, targetWidth, lifecycleScope, isPaginated)
+                    binding.rvPdfVertical.adapter = pdfVerticalAdapter
                 }
 
                 binding.progressLoading.visibility = View.GONE
                 showPage(0)
             } catch (e: Exception) {
                 binding.progressLoading.visibility = View.GONE
-                Toast.makeText(
-                    this@ViewerActivity,
-                    "Lỗi mở tài liệu: ${e.message}",
-                    Toast.LENGTH_LONG
-                ).show()
+                Toast.makeText(this@ViewerActivity, "Lỗi mở tài liệu: ${e.message}", Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -615,9 +610,7 @@ class ViewerActivity : AppCompatActivity() {
         if (externalPresentation?.isShowing != true) return
         val targetWidth = resources.displayMetrics.widthPixels.coerceAtLeast(1200)
         lifecycleScope.launch {
-            val bmp = withContext(Dispatchers.IO) {
-                engine.renderPage(pageIdx, targetWidth)
-            }
+            val bmp = withContext(Dispatchers.IO) { engine.renderPage(pageIdx, targetWidth) }
             externalPresentation?.showPdfBitmap(bmp)
         }
     }
@@ -625,7 +618,7 @@ class ViewerActivity : AppCompatActivity() {
     private fun renderedHtmlForPage(idx: Int): String? {
         val doc = loadedDoc as? LoadedDocument.HtmlPages ?: return null
         val raw = doc.pages.getOrNull(idx)?.html ?: return null
-        return HtmlTemplates.applyPcMode(raw, isPcMode)
+        return HtmlTemplates.applyViewOptions(raw, isPcMode, isPaginated, fitMode)
     }
 
     private fun showPage(index: Int) {
@@ -642,19 +635,20 @@ class ViewerActivity : AppCompatActivity() {
                 binding.tvPageCounter.text = "${currentPageIndex + 1} / $totalPages"
 
                 val engine = pdfEngine ?: return
-                if (isVerticalScroll) {
+                if (fitMode == "width") {
+                    // Fit Width + Continuous Vertical Scroll (Non-paginated or Paginated gaps)
                     binding.ivPdfPage.visibility = View.GONE
                     binding.rvPdfVertical.visibility = View.VISIBLE
+                    binding.rvPdfVertical.setBackgroundColor(if (isPaginated) Color.parseColor("#1E293B") else Color.WHITE)
                     binding.rvPdfVertical.scrollToPosition(currentPageIndex)
                     syncExternalPdfPage(currentPageIndex)
                 } else {
+                    // Fit Whole Page (shows full page height & width cleanly with pinch zoom)
                     binding.rvPdfVertical.visibility = View.GONE
                     binding.ivPdfPage.visibility = View.VISIBLE
                     val targetWidth = resources.displayMetrics.widthPixels.coerceAtLeast(1200)
                     lifecycleScope.launch {
-                        val bmp = withContext(Dispatchers.IO) {
-                            engine.renderPage(currentPageIndex, targetWidth)
-                        }
+                        val bmp = withContext(Dispatchers.IO) { engine.renderPage(currentPageIndex, targetWidth) }
                         binding.ivPdfPage.setImageBitmap(bmp)
                         externalPresentation?.showPdfBitmap(bmp)
                     }
@@ -666,19 +660,19 @@ class ViewerActivity : AppCompatActivity() {
                 binding.webOfficeView.visibility = View.VISIBLE
 
                 val page = doc.pages.getOrNull(currentPageIndex) ?: return
-                val singlePageHtml = HtmlTemplates.applyPcMode(page.html, isPcMode)
-                val displayHtml = if (isVerticalScroll && doc.pages.size > 1) {
-                    HtmlTemplates.combinePagesVertically(doc.title, doc.pages, isPcMode)
+                val singlePageHtml = HtmlTemplates.applyViewOptions(page.html, isPcMode, isPaginated, fitMode)
+                val displayHtml = if (fitMode == "width" && doc.pages.size > 1) {
+                    HtmlTemplates.combinePagesVertically(doc.title, doc.pages, isPcMode, isPaginated, fitMode)
                 } else {
                     singlePageHtml
                 }
 
-                binding.tvPageCounter.text = if (isVerticalScroll && doc.pages.size > 1) {
+                binding.tvPageCounter.text = if (fitMode == "width" && !isPaginated && doc.pages.size > 1) {
                     "Cuộn dọc ($totalPages trang)"
                 } else {
                     "${page.label} (${currentPageIndex + 1}/$totalPages)"
                 }
-                binding.webOfficeView.settings.layoutAlgorithm = if (isPcMode) {
+                binding.webOfficeView.settings.layoutAlgorithm = if (isPcMode || fitMode == "page") {
                     WebSettings.LayoutAlgorithm.NORMAL
                 } else {
                     WebSettings.LayoutAlgorithm.TEXT_AUTOSIZING
@@ -700,11 +694,9 @@ class ViewerActivity : AppCompatActivity() {
             detachExternalDisplay()
             return
         }
-
         if (externalPresentation?.display?.displayId == targetDisplay.displayId && externalPresentation?.isShowing == true) {
             return
         }
-
         detachExternalDisplay()
         runCatching {
             val presentation = ExternalScreenPresentation(this, targetDisplay)
@@ -741,12 +733,8 @@ class ViewerActivity : AppCompatActivity() {
                             overlaySvg = binding.annotationOverlay.toSvgMarkup()
                         )
                     },
-                    pdfJpegProvider = { idx ->
-                        pdfEngine?.renderPageAsJpeg(idx, 1600, 88)
-                    },
-                    htmlPageProvider = { idx ->
-                        renderedHtmlForPage(idx)
-                    }
+                    pdfJpegProvider = { idx -> pdfEngine?.renderPageAsJpeg(idx, 1500, 86) },
+                    htmlPageProvider = { idx -> renderedHtmlForPage(idx) }
                 )
                 server.start()
                 wifiCastServer = server
@@ -768,8 +756,7 @@ class ViewerActivity : AppCompatActivity() {
 
     private fun showWifiCastDialog() {
         if (wifiCastServer == null) {
-            val started = ensureWifiServerStarted()
-            if (!started) {
+            if (!ensureWifiServerStarted()) {
                 Toast.makeText(this, "Không thể khởi động máy chủ phát Wi-Fi.", Toast.LENGTH_LONG).show()
                 return
             }
@@ -786,16 +773,11 @@ class ViewerActivity : AppCompatActivity() {
         tvUrl.text = castUrl
         ivQr.setImageBitmap(QrCodeHelper.generateQrBitmap(castUrl, 480))
 
-        val dialog = AlertDialog.Builder(this)
-            .setView(dialogView)
-            .create()
-
+        val dialog = AlertDialog.Builder(this).setView(dialogView).create()
         btnToggle.setOnClickListener {
-            if (wifiCastServer != null) {
-                stopWifiServer()
-                Toast.makeText(this, "Đã tắt phát trình chiếu Wi-Fi.", Toast.LENGTH_SHORT).show()
-                dialog.dismiss()
-            }
+            stopWifiServer()
+            Toast.makeText(this, "Đã tắt phát trình chiếu Wi-Fi.", Toast.LENGTH_SHORT).show()
+            dialog.dismiss()
         }
         btnClose.setOnClickListener { dialog.dismiss() }
         dialog.show()
@@ -803,22 +785,17 @@ class ViewerActivity : AppCompatActivity() {
 
     private fun updateCastBadge() {
         val parts = mutableListOf<String>()
-        if (isVerticalScroll) parts.add("Cuộn dọc")
+        parts.add(if (fitMode == "width") "Vừa ngang" else "Toàn trang")
+        parts.add(if (isPaginated) "Phân trang" else "Không phân trang")
         if (isPcMode) parts.add("PC")
-        if (externalPresentation?.isShowing == true) {
-            parts.add("HDMI/TV: Đang chiếu")
-        }
+        if (externalPresentation?.isShowing == true) parts.add("HDMI/TV")
         if (wifiCastServer != null) {
-            val ip = QrCodeHelper.findLocalWifiIpAddress()
-            parts.add("Wi-Fi: http://$ip:$wifiCastPort")
+            parts.add("Wi-Fi: ${QrCodeHelper.findLocalWifiIpAddress()}:$wifiCastPort")
         }
-        if (parts.isEmpty()) {
-            binding.tvCastBadge.text = "$currentDocTitle • Chế độ xem"
-            binding.tvCastBadge.setTextColor(Color.parseColor("#FF334155"))
-        } else {
-            binding.tvCastBadge.text = parts.joinToString(" | ")
-            binding.tvCastBadge.setTextColor(Color.parseColor("#FF15803D"))
-        }
+        binding.tvCastBadge.text = parts.joinToString(" | ")
+        binding.tvCastBadge.setTextColor(
+            Color.parseColor(if (externalPresentation?.isShowing == true || wifiCastServer != null) "#FF15803D" else "#FF334155")
+        )
     }
 
     companion object {

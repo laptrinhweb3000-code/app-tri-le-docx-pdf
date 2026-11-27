@@ -7,10 +7,11 @@ import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import androidx.recyclerview.widget.RecyclerView
+import kotlin.math.roundToInt
 
 /**
- * RecyclerView with smooth 2-finger pinch-to-zoom (1x..4x), double-tap zoom,
- * and horizontal pan while keeping native vertical scrolling across all PDF pages.
+ * High-precision pinch-to-zoom RecyclerView (1x..5x) with accurate 2D focal-point tracking,
+ * damped multi-touch scaling, double-tap zoom around tap point, and smooth 1:1 pan + vertical scroll.
  */
 class ZoomableRecyclerView @JvmOverloads constructor(
     context: Context,
@@ -20,37 +21,62 @@ class ZoomableRecyclerView @JvmOverloads constructor(
 
     private var scaleFactor = 1f
     private val minScale = 1f
-    private val maxScale = 4f
+    private val maxScale = 5f
     private var panX = 0f
     private var lastTouchX = 0f
+    private var lastTouchY = 0f
     private var activePointerId = MotionEvent.INVALID_POINTER_ID
 
     private val scaleDetector = ScaleGestureDetector(
         context,
         object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
             override fun onScale(detector: ScaleGestureDetector): Boolean {
+                val rawFactor = detector.scaleFactor
+                if (!rawFactor.isFinite() || rawFactor <= 0f) return false
+
+                // Dampen micro-jitter spikes from multi-touch digitizers
+                val dampedFactor = rawFactor.coerceIn(0.86f, 1.16f)
                 val prevScale = scaleFactor
-                scaleFactor = (scaleFactor * detector.scaleFactor).coerceIn(minScale, maxScale)
-                val ratio = scaleFactor / prevScale
-                // Keep horizontal focus centered under fingers
-                panX = detector.focusX - (detector.focusX - panX) * ratio
+                val nextScale = (prevScale * dampedFactor).coerceIn(minScale, maxScale)
+                val actualRatio = nextScale / prevScale
+                if (actualRatio == 1f) return true
+
+                scaleFactor = nextScale
+
+                // Lock horizontal focal point accurately under user's fingers
+                val fx = detector.focusX.coerceIn(0f, width.toFloat())
+                panX = fx - (fx - panX) * actualRatio
                 clampPan()
+
+                // Lock vertical focal point by adjusting RecyclerView scroll proportionally
+                val fy = detector.focusY.coerceIn(0f, height.toFloat())
+                val dy = (fy * (actualRatio - 1f)).roundToInt()
+                if (dy != 0) {
+                    scrollBy(0, dy)
+                }
+
                 invalidate()
                 return true
             }
         }
-    )
+    ).apply {
+        isQuickScaleEnabled = false
+    }
 
     private val doubleTapDetector = GestureDetector(
         context,
         object : GestureDetector.SimpleOnGestureListener() {
             override fun onDoubleTap(e: MotionEvent): Boolean {
-                if (scaleFactor > 1.05f) {
+                if (scaleFactor > 1.08f) {
                     resetZoom()
                 } else {
-                    scaleFactor = 2.2f
-                    panX = e.x - e.x * scaleFactor
+                    val target = 2.4f
+                    val ratio = target / scaleFactor
+                    scaleFactor = target
+                    panX = e.x - (e.x - panX) * ratio
                     clampPan()
+                    val dy = (e.y * (ratio - 1f)).roundToInt()
+                    if (dy != 0) scrollBy(0, dy)
                     invalidate()
                 }
                 return true
@@ -94,18 +120,29 @@ class ZoomableRecyclerView @JvmOverloads constructor(
             MotionEvent.ACTION_DOWN -> {
                 activePointerId = ev.getPointerId(0)
                 lastTouchX = ev.x
+                lastTouchY = ev.y
             }
             MotionEvent.ACTION_MOVE -> {
-                if (!scaleDetector.isInProgress && scaleFactor > 1.05f) {
+                if (!scaleDetector.isInProgress && ev.pointerCount == 1 && scaleFactor > 1.05f) {
                     val idx = ev.findPointerIndex(activePointerId)
                     if (idx >= 0) {
                         val curX = ev.getX(idx)
+                        val curY = ev.getY(idx)
                         val dx = curX - lastTouchX
                         panX += dx
                         clampPan()
                         lastTouchX = curX
+                        lastTouchY = curY
                         invalidate()
                     }
+                }
+            }
+            MotionEvent.ACTION_POINTER_DOWN -> {
+                // Prevent jump when second finger touches down
+                val idx = ev.findPointerIndex(activePointerId)
+                if (idx >= 0) {
+                    lastTouchX = ev.getX(idx)
+                    lastTouchY = ev.getY(idx)
                 }
             }
             MotionEvent.ACTION_POINTER_UP -> {
@@ -116,6 +153,7 @@ class ZoomableRecyclerView @JvmOverloads constructor(
                     if (newIndex < ev.pointerCount) {
                         activePointerId = ev.getPointerId(newIndex)
                         lastTouchX = ev.getX(newIndex)
+                        lastTouchY = ev.getY(newIndex)
                     }
                 }
             }
